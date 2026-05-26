@@ -24,15 +24,24 @@
 FILE *log_file;                                        // puntatore al file di log condiviso tra i thread che gestiscono i client
 pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER; // lucchetto per l'accesso singolo al file di log tra i thread
 
+                                                        /*il mutex vuole sempre lavorare sull'indirizzo originale della variabile, 
+                                                        quindi se vogliamo modificare una variabile condivisa tra thread, 
+                                                        dobbiamo sempre passare il suo indirizzo originale al mutex, 
+                                                        e non una copia della variabile, altrimenti il mutex lavorerebbe 
+                                                        su una copia e non riuscirebbe a sincronizzare correttamente 
+                                                        l'accesso alla variabile condivisa tra i thread.    */
+
 // variabile per lo stop del programma (ctrl + c)
-volatile __sig_atomic_t server_running = 1;
-// variabile log_check
+volatile __sig_atomic_t server_running = 1;  //volatile è una variabile che puo cambiare in modo imprevedibile anche al di fuori del flusso del codice
+// variabile log_check per ruotare il file log
 volatile sig_atomic_t log_check = 0;
 
 int active_clients = 0;                                   // variabile per tenere traccia dei client attivi
 pthread_mutex_t thread_mutex = PTHREAD_MUTEX_INITIALIZER; // lucchetto per l'accesso alla variabile active_clients
 pthread_cond_t thread_cond = PTHREAD_COND_INITIALIZER;    // variabile di condizione per notificare il thread principale quando un client si disconnette
 
+
+//funzione che rimuove il newline finale da una stringa, se presente
 void remove_newline(char *text)
 {
     int text_clean = strcspn(text, "\r\n"); // trova la posizione del primo \n o \r
@@ -48,16 +57,22 @@ void get_timestamp(char *timestamp, size_t size)
     strftime(timestamp, size, "%Y-%m-%d %H:%M:%S", &local_time); /* formatta timestamp */
 }
 
-void write_log_message(const char *message)
+/*
+scrive il messaggio di log nel file log con formato [timestamp, producer_id, data] dove:
+- timestamp è la data e ora in cui il messaggio è stato ricevuto, formattato come "YYYY-MM-DD HH:MM:SS"
+- producer_id è l'ID del produttore, estratto dalla parte prima della virgola del messaggio ricevuto (se presente), altrimenti "UNKNOWN" se il messaggio non contiene una virgola
+- data è la parte dopo la virgola del messaggio ricevuto (se presente), altrimenti l'intero messaggio se non contiene una virgola   
+*/
+void write_log_message(const char *message) //const indica che il messaggio non si puo modificare
 {
-    char copy[BUFFER_SIZE];  /* copia modificabile */
+    char copy[BUFFER_SIZE];  /* copia modificabile del messaggio */
     char timestamp[32];      /* timestamp formattato */
     char *separator;         /* virgola tra ID e dato */
     const char *producer_id; /* ID produttore */
     const char *data;        /* dato ricevuto */
 
     snprintf(copy, sizeof(copy), "%s", message); // copio il messaggio dato che poi vado a modificarlo
-    remove_newline(copy);
+    remove_newline(copy); //pulisco
 
     separator = strchr(copy, ','); /* cerca separatore ID,dato */
     if (separator != NULL)
@@ -82,20 +97,24 @@ void write_log_message(const char *message)
 
 void write_logout_message(const char *producer_id)
 {
-    char timestamp[32]; /* timestamp formattato */
+    char timestamp[32]; /* timestamp formattato e riservo 32 caratteri */
+
+    //char *timestamp = malloc(32); /* timestamp formattato */
 
     get_timestamp(timestamp, sizeof(timestamp));                         /* crea timestamp */
     pthread_mutex_lock(&log_mutex);                                      /* prende lock file */
     fprintf(log_file, "[%s, %s, DISCONNECT]\n", timestamp, producer_id); /* scrive log di logout */
     fflush(log_file);                                                    /* forza scrittura nel file log */
     pthread_mutex_unlock(&log_mutex);                                    /* rilascia lock file */
+
+    /* free(timestamp); */ /* libera memoria timestamp */
 }
 
 void handle_sigint(int sigint)
 {
-
-    (void)sigint; // ignora parametro non usato
-    server_running = 0;
+    //sigint è il numero del segnale che ha causato l'interruzione, in questo caso SIGINT, ma non lo usiamo quindi lo ignoriamo
+    (void)sigint; 
+    server_running = 0; // setto server non piu in esecuzione
 }
 
 void handle_sigalrm(int sigalrm)
@@ -110,12 +129,13 @@ void handle_sigpipe(int sigpipe)
     (void)sigpipe; // ignora parametro non usato
 }
 
+//creazione nuovo file log
 void new_log()
 {
     pthread_mutex_lock(&log_mutex); // prendi lock per accedere al file di log
 
     fseek(log_file, 0, SEEK_END);    // sposta il puntatore alla fine del file
-    long log_size = ftell(log_file); // ottieni la dimensione del file di
+    long log_size = ftell(log_file); // ottieni la dimensione del file di log
 
     if (log_size >= LOG_SIZE_LIMIT)
     {                     // se il file di log supera la dimensione limite
@@ -126,22 +146,15 @@ void new_log()
         get_timestamp(timestamp, sizeof(timestamp));
         char new_log_name[64];
         snprintf(new_log_name, sizeof(new_log_name), "log_%s.log", timestamp);
-        if (rename(LOG_FILE_NAME, new_log_name) == -1)
-        {
-            perror("rename");                 // errore rinomina file
-            pthread_mutex_unlock(&log_mutex); // rilascia lock
-            return;
-        }
-
+        rename(LOG_FILE_NAME, new_log_name); 
+    
         // crea un nuovo file di log
-        log_file = fopen(LOG_FILE_NAME, "a");
+        log_file = fopen(LOG_FILE_NAME, "a");   // "a" per aprire in append, se il file non esiste lo crea
         if (log_file == NULL)
         {
-            perror("fopen");                  // errore apertura nuovo file di log
-            pthread_mutex_unlock(&log_mutex); // rilascia lock
-            return;
+            perror("fopen new log"); /* errore apertura nuovo log */
+            exit(EXIT_FAILURE);
         }
-
         printf("File di log ruotato: %s\n", new_log_name);
     }
 
@@ -151,7 +164,7 @@ void new_log()
 void *handle_client(void *arg) // qui arg è generico, quindi dobbiamo fare il cast del client_fd da void* a int
 {
     int client_fd = *(int *)arg; // puntatore del socket del client passato come argomento, lo dereferenzio
-                                 //(ovvero accedo al valore dove è punato in memoria) per ottenere il valore intero del socket
+                                 //(ovvero accedo al valore dove è puntato in memoria) per ottenere il valore intero del socket
     free(arg);                   // libera la memoria allocata per il socket del client
                                  // dato che il thread non ha piu bisogno della memoria dinamica dato lo abbiamo copiato in client_fd
 
@@ -190,21 +203,29 @@ void *handle_client(void *arg) // qui arg è generico, quindi dobbiamo fare il c
         write_logout_message(producer_id);                     /* scrive messaggio di chiusura nel log */
     }
 
-    close(client_fd);
+    close(client_fd);  //se il client chiude la connessione, chiudiamo anche la socket del server per quel client
 
-    pthread_mutex_lock(&thread_mutex);
+    pthread_mutex_lock(&thread_mutex);  // prendiamo lock per modificare active_clients
     active_clients--;
 
     if (active_clients == 0)
     {
-        pthread_cond_signal(&thread_cond);
+        pthread_cond_signal(&thread_cond); // se non ci sono piu client, passiamo al main che POTREBBE essere in attesa di chiusura 
     }
 
     pthread_mutex_unlock(&thread_mutex);
 
-    return NULL; // termina il thread
+    return NULL; // termina il thread con NULL perche la funzione prende in input un puntatore e dobbiamo restituire un puntatore, 
+                // ma non abbiamo nulla da restituire in questo caso, quindi restituiamo NULL
 }
 
+//il cuore del server, che rimane in ascolto per sempre 
+
+/*
+ordinamento: apre il file di log -> crea socket -> imposta opzione SO_REUSEADDR -> 
+configura indirizzo server -> bind -> listen -> ciclo infinito di accept e gestione client con thread -> 
+chiusura socket e file di log alla terminazione del server
+*/
 int main(void)
 {
     int server_fd;                  /* socket di ascolto che usa bind, listen e accept */
@@ -226,8 +247,8 @@ int main(void)
     }
 
     // manteniamo la porta 8080 sempre aperta anche se il server viene chiuso in modo anomalo (Ctrl+C) e non riesce a liberare la porta
-    int optval = 1; // valore da assegnare all'opzione SO_REUSEADDR
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
+    int val = 1; // valore da assegnare all'opzione SO_REUSEADDR
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) == -1)
     {
         perror("setsockopt"); /* stampa errore setsockopt */
         close(server_fd);
@@ -237,9 +258,10 @@ int main(void)
 
     memset(&server_addr, 0, sizeof(server_addr));    /* riempie di 0 la variabile server_addr, dato che potrebbe contenere dati rimasti in memoria*/
     server_addr.sin_family = AF_INET;                /* famiglia IPv4 */
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); /* ascolta su ogni IP del pc locale*/
-    server_addr.sin_port = htons(SERVER_PORT);       /* porta in formato rete */
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); /* ascolta su ogni IP del pc locale (uso htonl per valori lunghi)*/
+    server_addr.sin_port = htons(SERVER_PORT);       /* porta in formato rete (uso htons per valori corti) */
 
+    //collega la socket alla porta e ip specificati in server_addr
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {                   // associazione del socket a porta e ip:
         perror("bind"); /* stampa errore bind */
@@ -262,8 +284,8 @@ int main(void)
     // segnale sigint
     struct sigaction sa;
 
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = handle_sigint;
+    memset(&sa, 0, sizeof(sa)); //azzera la struttura sigaction per evitare valori casuali
+    sa.sa_handler = handle_sigint; //chiamo handle_sigint quando riceviamo SIGINT (Ctrl+C)
 
     if (sigaction(SIGINT, &sa, NULL) == -1)
     {
@@ -306,6 +328,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    //ciclo infinito di accept e gestione client con thread
     while (server_running) // rimaniamo in ascolto per sempre, finché non viene interrotto il processo (Ctrl+C)
     {
         int client_fd;                                   /* socket del client che si connette al server */
@@ -313,7 +336,7 @@ int main(void)
         socklen_t client_addr_len = sizeof(client_addr); /* lunghezza dell'indirizzo del client */
         pthread_t thread_id;                             /* id del thread per gestire il client */
 
-        if (log_check)
+        if (log_check) // check per ruotare il log
         {
             log_check = 0;
             new_log();
@@ -326,7 +349,7 @@ int main(void)
             { // se l'errore è dovuto a server in chiusura, esci dal ciclo senza stampare errore
                 break;
             }
-            if (errno == EINTR)
+            if (errno == EINTR) //system call
             { // se l'errore è dovuto a un segnale (come SIGINT o SIGALRM), continua ad accettare altri client senza stampare errore
                 continue;
             }
@@ -335,12 +358,6 @@ int main(void)
             close(server_fd);
             fclose(log_file);
             return EXIT_FAILURE;
-        }
-
-        if (log_check)
-        {
-            log_check = 0;
-            new_log();
         }
 
         printf("Produttore connesso da %s:%d\n",

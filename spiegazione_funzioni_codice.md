@@ -117,7 +117,6 @@ void get_timestamp(char *timestamp, size_t size)
 ```
 
 Questa funzione genera il timestamp da mettere nel log.
-
 Prima prende il tempo corrente:
 
 ```c
