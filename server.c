@@ -1,23 +1,22 @@
 // posix va definito prima di tutto
 #define _POSIX_C_SOURCE 200809L // per avere accesso a funzioni come localtime_r e strftime
 
-#include <arpa/inet.h>  /* funzioni per indirizzi IP e byte order */
-#include <netinet/in.h> /* strutture per indirizzi IPv4 */
-#include <pthread.h>    /* pthread_create, pthread_detach, mutex */
-#include <stdio.h>      /* printf, perror */
-#include <stdlib.h>     /* EXIT_SUCCESS, EXIT_FAILURE */
-#include <string.h>     /* memset */
-#include <sys/socket.h> /* socket, bind, listen, accept, recv */
-#include <time.h>       /* time, localtime_r, strftime */
-#include <unistd.h>     /* close */
-#include <signal.h>     /* libreria di sigint*/
-#include <errno.h>      /* errno per error handling */
+#include <arpa/inet.h>  
+#include <netinet/in.h> /
+#include <pthread.h>    
+#include <stdio.h>     
+#include <stdlib.h>     
+#include <string.h>    
+#include <sys/socket.h> 
+#include <time.h>       
+#include <unistd.h>    
+#include <signal.h>     
+#include <errno.h>      
 
 #define SERVER_PORT 8080
 #define BACKLOG 5        // numero massimo di connessioni in attesa
 #define BUFFER_SIZE 1024 // dimensione massima del messaggio ricevuto
 #define LOG_FILE_NAME "server.log"
-#define MAX_CLIENTS 5         // numero massimo di client che il server può gestire contemporaneamente
 #define LOG_CHECK_INTERVAL 10 // intervallo in secondi per il controllo del file di log
 #define LOG_SIZE_LIMIT 1024   // dimensione massima del file di log in byte
 
@@ -50,11 +49,11 @@ void remove_newline(char *text)
 
 void get_timestamp(char *timestamp, size_t size)
 {
-    time_t now = time(NULL); /* tempo corrente */
-    struct tm local_time;    /* data locale */
+    time_t now = time(NULL); //tempo attuale
+    struct tm local_time;    //data locale
 
-    localtime_r(&now, &local_time);                              /* converte in data leggibile */
-    strftime(timestamp, size, "%Y-%m-%d %H:%M:%S", &local_time); /* formatta timestamp */
+    localtime_r(&now, &local_time);                              // converte in data evitando problemi di concorrenza
+    strftime(timestamp, size, "%Y-%m-%d %H:%M:%S", &local_time); //formatta il timestamp
 }
 
 /*
@@ -65,49 +64,49 @@ scrive il messaggio di log nel file log con formato [timestamp, producer_id, dat
 */
 void write_log_message(const char *message) //const indica che il messaggio non si puo modificare
 {
-    char copy[BUFFER_SIZE];  /* copia modificabile del messaggio */
-    char timestamp[32];      /* timestamp formattato */
-    char *separator;         /* virgola tra ID e dato */
-    const char *producer_id; /* ID produttore */
-    const char *data;        /* dato ricevuto */
+    char copy[BUFFER_SIZE];  // copia modificabile del messaggio
+    char timestamp[32];      // timestamp formattato
+    char *separator;         // virgola tra ID e dato
+    const char *producer_id; // ID produttore
+    const char *data;        // dato ricevuto
 
     snprintf(copy, sizeof(copy), "%s", message); // copio il messaggio dato che poi vado a modificarlo
     remove_newline(copy); //pulisco
 
-    separator = strchr(copy, ','); /* cerca separatore ID,dato */
+    separator = strchr(copy, ','); //cerca separatore ID,dato
     if (separator != NULL)
     {
-        *separator = '\0';    /* separa ID e dato */
-        producer_id = copy;   /* parte prima della virgola */
-        data = separator + 1; /* parte dopo la virgola */
+        *separator = '\0';    // separa ID e dato
+        producer_id = copy;   // parte prima della virgola
+        data = separator + 1; // parte dopo la virgola
     }
     else
     {
-        producer_id = "UNKNOWN"; /* ID mancante */
-        data = copy;             /* messaggio senza virgola */
+        producer_id = "UNKNOWN"; // ID mancante
+        data = copy;             // messaggio senza virgola
     }
 
-    get_timestamp(timestamp, sizeof(timestamp)); /* crea timestamp */
+    get_timestamp(timestamp, sizeof(timestamp)); // crea timestamp
 
-    pthread_mutex_lock(&log_mutex);                                    /* prende lock file */
-    fprintf(log_file, "[%s, %s, %s]\n", timestamp, producer_id, data); /* scrive log */
-    fflush(log_file);                                                  /* forza scrittura nel file log */
-    pthread_mutex_unlock(&log_mutex);                                  /* rilascia lock file */
+    pthread_mutex_lock(&log_mutex);                                    // prende lock file
+    fprintf(log_file, "[%s, %s, %s]\n", timestamp, producer_id, data); // scrive log
+    fflush(log_file);                                                  // forza scrittura nel file log
+    pthread_mutex_unlock(&log_mutex);                                  // rilascia lock file
 }
 
 void write_logout_message(const char *producer_id)
 {
-    char timestamp[32]; /* timestamp formattato e riservo 32 caratteri */
+    char timestamp[32]; // timestamp formattato e riservo 32 caratteri in memoria
 
-    //char *timestamp = malloc(32); /* timestamp formattato */
+    //char *timestamp = malloc(32);  timestamp formattato 
 
-    get_timestamp(timestamp, sizeof(timestamp));                         /* crea timestamp */
-    pthread_mutex_lock(&log_mutex);                                      /* prende lock file */
-    fprintf(log_file, "[%s, %s, DISCONNECT]\n", timestamp, producer_id); /* scrive log di logout */
-    fflush(log_file);                                                    /* forza scrittura nel file log */
-    pthread_mutex_unlock(&log_mutex);                                    /* rilascia lock file */
+    get_timestamp(timestamp, sizeof(timestamp));                         // crea timestamp
+    pthread_mutex_lock(&log_mutex);                                      // prende lock file
+    fprintf(log_file, "[%s, %s, DISCONNECT]\n", timestamp, producer_id); // scrive log di logout
+    fflush(log_file);                                                    // forza scrittura nel file log
+    pthread_mutex_unlock(&log_mutex);                                    // rilascia lock file
 
-    /* free(timestamp); */ /* libera memoria timestamp */
+    //free(timestamp);  // libera memoria timestamp
 }
 
 void handle_sigint(int sigint)
@@ -173,34 +172,34 @@ void *handle_client(void *arg) // qui arg è generico, quindi dobbiamo fare il c
 
     char producer_id[BUFFER_SIZE] = "UNKNOWN"; // ID del produttore
 
-    bytes_read = recv(client_fd, buffer, BUFFER_SIZE - 1, 0); /* riceve dati */
+    bytes_read = recv(client_fd, buffer, BUFFER_SIZE - 1, 0); //riceve dati dal client e lascia spazio per il terminatore di stringa
 
     // rimaniamo in ascolto finché il client non chiude la connessione (bytes_read == 0)
     while (bytes_read > 0)
     {
-        buffer[bytes_read] = '\0'; /* aggiunge terminatore di stringa al messaggio ricevuto */
+        buffer[bytes_read] = '\0'; // aggiunge terminatore di stringa al messaggio ricevuto
 
-        char *separator = strchr(buffer, ','); /* cerca separatore ID,dato */
+        char *separator = strchr(buffer, ','); // cerca separatore ID,dato
         if (separator != NULL)
         {
-            *separator = '\0';                                        /* separa ID e dato */
-            snprintf(producer_id, sizeof(producer_id), "%s", buffer); /* salva ID produttore per il log di disconnessione */
-            *separator = ',';                                         /* ripristina il messaggio originale con ID,DATO */
+            *separator = '\0';                                        // separa ID e dato
+            snprintf(producer_id, sizeof(producer_id), "%s", buffer); // salva ID produttore per il log di disconnessione
+            *separator = ',';                                         // ripristina il messaggio originale con ID,DATO
         }
 
         printf("Messaggio ricevuto: %s\n", buffer);
-        write_log_message(buffer);                                /* scrive messaggio nel log */
-        bytes_read = recv(client_fd, buffer, BUFFER_SIZE - 1, 0); /* riceve dati */
+        write_log_message(buffer);                                // scrive messaggio nel log
+        bytes_read = recv(client_fd, buffer, BUFFER_SIZE - 1, 0); // riceve dati
     }
 
-    if (bytes_read == -1)
+    if (bytes_read == -1) //se bytes_read è -1, c'è stato un errore nella ricezione dei dati
     {
-        perror("recv"); /* errore recv */
+        perror("recv"); 
     }
     else
     {
-        printf("%s ha chiuso la connessione.\n", producer_id); /* client ha chiuso la connessione */
-        write_logout_message(producer_id);                     /* scrive messaggio di chiusura nel log */
+        printf("%s ha chiuso la connessione.\n", producer_id); //il client ha chiuso la connessione
+        write_logout_message(producer_id);                     // scrive messaggio di chiusura nel log
     }
 
     close(client_fd);  //se il client chiude la connessione, chiudiamo anche la socket del server per quel client
@@ -228,20 +227,20 @@ chiusura socket e file di log alla terminazione del server
 */
 int main(void)
 {
-    int server_fd;                  /* socket di ascolto che usa bind, listen e accept */
-    struct sockaddr_in server_addr; /* indirizzo del server */
+    int server_fd;                  // socket di ascolto che usa bind, listen e accept
+    struct sockaddr_in server_addr; // indirizzo del server
 
-    log_file = fopen(LOG_FILE_NAME, "a"); /* apre log in append */
+    log_file = fopen(LOG_FILE_NAME, "a"); // apre log in append, se il file non esiste lo crea
     if (log_file == NULL)
     {
-        perror("fopen"); /* errore apertura log */
+        perror("fopen"); // errore apertura log
         return EXIT_FAILURE;
     }
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0); /* AF_INET = usa IPv4, SOCK_STREAM = usa TCP, 0 = protocollo automatico */
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); // AF_INET = usa IPv4, SOCK_STREAM = usa TCP, 0 = protocollo automatico
     if (server_fd == -1)
     {                     // se errore nella creazione della socket
-        perror("socket"); /* stampa errore socket */
+        perror("socket"); // stampa errore socket
         fclose(log_file);
         return EXIT_FAILURE;
     }
@@ -250,29 +249,29 @@ int main(void)
     int val = 1; // valore da assegnare all'opzione SO_REUSEADDR
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) == -1)
     {
-        perror("setsockopt"); /* stampa errore setsockopt */
+        perror("setsockopt"); // stampa errore setsockopt
         close(server_fd);
         fclose(log_file);
         return EXIT_FAILURE;
     }
 
-    memset(&server_addr, 0, sizeof(server_addr));    /* riempie di 0 la variabile server_addr, dato che potrebbe contenere dati rimasti in memoria*/
-    server_addr.sin_family = AF_INET;                /* famiglia IPv4 */
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); /* ascolta su ogni IP del pc locale (uso htonl per valori lunghi)*/
-    server_addr.sin_port = htons(SERVER_PORT);       /* porta in formato rete (uso htons per valori corti) */
+    memset(&server_addr, 0, sizeof(server_addr));    // riempie di 0 la variabile server_addr, dato che potrebbe contenere dati rimasti in memoria
+    server_addr.sin_family = AF_INET;                // famiglia IPv4
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // ascolta su ogni IP del pc locale (uso htonl per valori lunghi)
+    server_addr.sin_port = htons(SERVER_PORT);       // porta in formato rete (uso htons per valori corti)
 
     //collega la socket alla porta e ip specificati in server_addr
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {                   // associazione del socket a porta e ip:
-        perror("bind"); /* stampa errore bind */
+        perror("bind"); // stampa errore bind
         close(server_fd);
         fclose(log_file);
         return EXIT_FAILURE;
     }
 
     if (listen(server_fd, BACKLOG) == -1)
-    {                     /* mette il server in ascolto */
-        perror("listen"); /* stampa errore listen */
+    {                     // mette il server in ascolto
+        perror("listen"); 
         close(server_fd);
         fclose(log_file);
         return EXIT_FAILURE;
@@ -289,7 +288,7 @@ int main(void)
 
     if (sigaction(SIGINT, &sa, NULL) == -1)
     {
-        perror("sigaction"); /* stampa errore sigaction */
+        perror("sigaction"); // stampa errore sigaction
         close(server_fd);
         fclose(log_file);
         return EXIT_FAILURE;
@@ -331,10 +330,10 @@ int main(void)
     //ciclo infinito di accept e gestione client con thread
     while (server_running) // rimaniamo in ascolto per sempre, finché non viene interrotto il processo (Ctrl+C)
     {
-        int client_fd;                                   /* socket del client che si connette al server */
-        struct sockaddr_in client_addr;                  /* indirizzo del client */
-        socklen_t client_addr_len = sizeof(client_addr); /* lunghezza dell'indirizzo del client */
-        pthread_t thread_id;                             /* id del thread per gestire il client */
+        int client_fd;                                   // socket del client che si connette al server
+        struct sockaddr_in client_addr;                  // indirizzo del client
+        socklen_t client_addr_len = sizeof(client_addr); // lunghezza dell'indirizzo del client
+        pthread_t thread_id;                             // id del thread per gestire il client
 
         if (log_check) // check per ruotare il log
         {
@@ -342,7 +341,7 @@ int main(void)
             new_log();
         }
 
-        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len); /* accetta un client */
+        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len); // accetta un client
         if (client_fd == -1)
         {
             if (!server_running)
@@ -354,22 +353,22 @@ int main(void)
                 continue;
             }
 
-            perror("accept"); /* errore accept */
+            perror("accept"); // errore accept
             close(server_fd);
             fclose(log_file);
             return EXIT_FAILURE;
         }
 
         printf("Produttore connesso da %s:%d\n",
-               inet_ntoa(client_addr.sin_addr), /* IP client leggibile */
-               ntohs(client_addr.sin_port));    /* porta client leggibile */
+               inet_ntoa(client_addr.sin_addr), // IP client leggibile
+               ntohs(client_addr.sin_port));    // porta client leggibile
 
         // crea un thread per gestire il client connesso
         int *pclient = malloc(sizeof(int)); // alloca memoria per il socket del client cosi che ogni thread abbia la
                                             // sua memoria separata per il socket del client, evitando conflitti tra thread
         if (pclient == NULL)
         {
-            perror("malloc"); /* errore malloc */
+            perror("malloc"); // errore malloc
             close(client_fd);
             continue; // continua ad accettare altri client
         }
@@ -387,15 +386,12 @@ int main(void)
             active_clients--;                    // decrementa numero di client attivi
             pthread_mutex_unlock(&thread_mutex); // rilascia lock
 
-            perror("pthread_create"); /* errore pthread_create */
-            free(pclient);            /* libera la memoria allocata per il socket del client */
+            perror("pthread_create"); // errore pthread_create
+            free(pclient);            // libera la memoria allocata per il socket del client
             close(client_fd);
             continue; // continua ad accettare altri client
         }
-        else
-        {
-        }
-        pthread_detach(thread_id); // detacha il thread per liberare le risorse quando termina
+        pthread_detach(thread_id); // detacha il thread per liberare le risorse subito dopo la terminazione del thread
     }
 
     close(server_fd);
